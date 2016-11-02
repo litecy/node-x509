@@ -29,9 +29,9 @@ Local<Value> try_parse(const std::string& dataString);
 Local<Value> verify(const std::string& dataString);
 Local<Value> parse_date(ASN1_TIME *date);
 Local<Value> parse_serial(ASN1_INTEGER *serial);
-Local<Object> parse_name(X509_NAME *subject);
+Local<Value> parse_name(X509_NAME *subject);
 
-char* real_name(char *data);
+const char* real_name(const char *data);
 char* trim(char *data, int len);
 
 #endif

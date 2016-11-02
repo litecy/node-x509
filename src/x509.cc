@@ -251,17 +251,17 @@ Local<Value> try_parse(const std::string& dataString) {
   // fingerPrint
   unsigned int md_size, idx;
   unsigned char md[EVP_MAX_MD_SIZE];
-  if (X509_digest(cert, EVP_sha1(), md, &md_size)) {
+  if (X509_digest(cert, EVP_sha256(), md, &md_size)) {
     const char hex[] = "0123456789ABCDEF";
     char fingerprint[EVP_MAX_MD_SIZE * 3];
     for (idx = 0; idx < md_size; idx++) {
-      fingerprint[3*idx] = hex[(md[idx] & 0xf0) >> 4];
-      fingerprint[(3*idx)+1] = hex[(md[idx] & 0x0f)];
-      fingerprint[(3*idx)+2] = ':';
+      fingerprint[2*idx] = hex[(md[idx] & 0xf0) >> 4];
+      fingerprint[(2*idx)+1] = hex[(md[idx] & 0x0f)];
+      //fingerprint[(2*idx)+2] = ':';
     }
 
     if (md_size > 0) {
-      fingerprint[(3*(md_size-1))+2] = '\0';
+      fingerprint[(2*(md_size-1))+2] = '\0';
     } else {
       fingerprint[0] = '\0';
     }
@@ -420,27 +420,42 @@ Local<Value> parse_date(ASN1_TIME *date) {
   return scope.Escape(DateObject->CallAsConstructor(1, args));
 }
 
-Local<Object> parse_name(X509_NAME *subject) {
+Local<Value> parse_name(X509_NAME *subject) {
   Nan::EscapableHandleScope scope;
-  Local<Object> cert = Nan::New<Object>();
+  //Local<Object> cert = Nan::New<Object>();
   int i, length;
   ASN1_OBJECT *entry;
+  const char *objbuf;
   unsigned char *value;
+  int fn_opt, fn_nid;
   char buf[255];
   length = X509_NAME_entry_count(subject);
+  std::string subj;
   for (i = 0; i < length; i++) {
     entry = X509_NAME_ENTRY_get_object(X509_NAME_get_entry(subject, i));
-    OBJ_obj2txt(buf, 255, entry, 0);
+    fn_nid = OBJ_obj2nid(entry);
+    objbuf = OBJ_nid2sn(fn_nid);
+    printf(objbuf);
+    OBJ_obj2txt(buf, 255, entry, 1);
     value = ASN1_STRING_data(X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, i)));
-    Nan::Set(cert,
-      Nan::New<String>(real_name(buf)).ToLocalChecked(),
-      Nan::New<String>((const char*) value).ToLocalChecked());
+    subj.append(real_name((const char *)objbuf));
+    subj.append("=");
+    subj.append((const char *)value);
+    subj.append(", ");
+    //Nan::Set(cert,
+    //  Nan::New<String>(real_name(buf)).ToLocalChecked(),
+    //  Nan::New<String>((const char*) value).ToLocalChecked());
   }
-  return scope.Escape(cert);
+  subj.resize(subj.size() - 2);
+  //Nan::Set(cert,
+  //  Nan::New<String>("").ToLocalChecked(),
+  Local<String> serialNumber;
+  serialNumber = Nan::New<String>(subj.c_str()).ToLocalChecked();
+  return scope.Escape(serialNumber);
 }
 
 // Fix for missing fields in OpenSSL.
-char* real_name(char *data) {
+const char* real_name(const char *data) {
   int i, length = (int) sizeof(MISSING) / sizeof(MISSING[0]);
 
   for (i = 0; i < length; i++) {

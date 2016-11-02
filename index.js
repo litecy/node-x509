@@ -50,3 +50,6 @@ exports.parseCert = function(path) {
   ret.extensions = exts;
   return ret;
 };
+
+
+console.log(x509.parseCert('/Users/litecy/Workspace/iot/mosconf/client-mac.1.crt'));
