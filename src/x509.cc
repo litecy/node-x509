@@ -45,7 +45,83 @@ std::string parse_args(const Nan::FunctionCallbackInfo<v8::Value>& info) {
   return *String::Utf8Value(info[0]->ToString());
 }
 
+int load_x509(const char * pem, X509 ** ppx509) {
+    int result = 0;
+    BIO * bio_mem = BIO_new(BIO_s_mem());
+    if(bio_mem == NULL) {
+        result = -1;
+        Nan::ThrowError("mem alloc failed");
+        goto end;
+    }
+    if(BIO_puts(bio_mem, pem) <= 0) {
+        result = -2;
+        Nan::ThrowError("invalid pem");
+        goto end;
+    }
 
+    PEM_read_bio_X509(bio_mem, ppx509, NULL, NULL);
+    result = 1;
+end:
+    if(bio_mem != NULL) {
+        BIO_free(bio_mem);
+    }
+    return result;
+}
+
+int verify_cert(const char* pem_c_str, const char * ca_c_str)
+{
+    int result = 0;
+    X509 * cert = NULL;
+    X509 * ca = NULL;
+    EVP_PKEY *pkey = NULL;
+    
+    OpenSSL_add_all_algorithms();
+    
+    result = load_x509(pem_c_str, &cert);
+    if(result != 1) {
+        Nan::ThrowError("load cert failed");
+        goto end;
+    }
+    
+    result = load_x509(ca_c_str, &ca);
+    
+    if(result != 1) {
+        Nan::ThrowError("load cert failed");
+        goto end;
+    }
+    
+    pkey=X509_get_pubkey(ca);
+    if(pkey == NULL) {
+        Nan::ThrowError("get public key from cert failed");
+        goto end;
+    }
+    
+    result= X509_verify(cert, pkey);
+    
+end:
+    if(pkey != NULL) {
+        EVP_PKEY_free(pkey);
+    }
+    if(cert != NULL) {
+        X509_free(cert);
+    }
+    if(ca != NULL) {
+        X509_free(ca);
+    }
+    return result;
+}
+
+
+NAN_METHOD(verifySingleCa) {
+  Nan::HandleScope scope;
+
+  OpenSSL_add_all_algorithms();
+
+  std::string cert_data = *String::Utf8Value(info[0]->ToString());
+  std::string ca_data = *String::Utf8Value(info[1]->ToString());
+  int result  = verify_cert(cert_data.c_str(), ca_data.c_str());
+  info.GetReturnValue().Set(Nan::New(result));
+}
 
 NAN_METHOD(verify) {
   Nan::HandleScope scope;
@@ -422,7 +498,6 @@ Local<Value> parse_date(ASN1_TIME *date) {
 
 Local<Value> parse_name(X509_NAME *subject) {
   Nan::EscapableHandleScope scope;
-  //Local<Object> cert = Nan::New<Object>();
   int i, length;
   ASN1_OBJECT *entry;
   const char *objbuf;
@@ -435,20 +510,14 @@ Local<Value> parse_name(X509_NAME *subject) {
     entry = X509_NAME_ENTRY_get_object(X509_NAME_get_entry(subject, i));
     fn_nid = OBJ_obj2nid(entry);
     objbuf = OBJ_nid2sn(fn_nid);
-    printf(objbuf);
     OBJ_obj2txt(buf, 255, entry, 1);
     value = ASN1_STRING_data(X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, i)));
     subj.append(real_name((const char *)objbuf));
     subj.append("=");
     subj.append((const char *)value);
     subj.append(", ");
-    //Nan::Set(cert,
-    //  Nan::New<String>(real_name(buf)).ToLocalChecked(),
-    //  Nan::New<String>((const char*) value).ToLocalChecked());
   }
   subj.resize(subj.size() - 2);
-  //Nan::Set(cert,
-  //  Nan::New<String>("").ToLocalChecked(),
   Local<String> serialNumber;
   serialNumber = Nan::New<String>(subj.c_str()).ToLocalChecked();
   return scope.Escape(serialNumber);

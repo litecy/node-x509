@@ -37,6 +37,22 @@ exports.verify = function(certPath, CABundlePath, cb) {
   });
 };
 
+exports.verifySingleCa = function(certdata, cadata) {
+  if (!certdata) {
+    throw new TypeError('Certificate data is required');
+  }
+  if (!cadata) {
+    throw new TypeError('CA data is required');
+  }
+  try {
+    var result = x509.verifySingleCa(certdata, cadata);
+    return result;
+  }
+  catch (verificationError) {
+    throw verificationError;
+  }
+};
+
 
 exports.parseCert = function(path) {
   var ret = x509.parseCert(path);
@@ -50,3 +66,14 @@ exports.parseCert = function(path) {
   ret.extensions = exts;
   return ret;
 };
+
+// fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/client-li.1.crt", "utf8", (err, data) => {
+//   if (err) throw err;
+//   fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/ca-c-li.crt", "utf8", (err, data1) => {
+//     console.log(exports.verifySingleCa(data, data1));
+//   });
+// });
+
+//var ret = exports.parseCert("/Users/litecy/Workspace/iot/api/testcase/cert/client-li.1.crt")
+//console.log(ret);
+
