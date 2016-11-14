@@ -229,8 +229,10 @@ NAN_METHOD(mkcert) {
   bool result = false;
   X509 *x509=NULL;
   EVP_PKEY *pkey=NULL;
+  EVP_PKEY *pubkey=NULL;
   X509 *ca_cert = NULL;
   EVP_PKEY *ca_key=NULL;
+
   BIO * outbio = BIO_new(BIO_s_mem());
   if(load_cert(ca_pem.c_str(), &ca_cert) && load_key(ca_pem.c_str(), &ca_key)) {
     if(!mkcert(&x509,&pkey,2048,0,365, ca_cert, ca_key)) {
@@ -259,6 +261,20 @@ NAN_METHOD(mkcert) {
     Nan::New<String>("key").ToLocalChecked(),
     Nan::New<String>(prikey).ToLocalChecked());
     free(prikey);
+
+    pubkey = X509_get_pubkey(x509);
+    
+    BIO_reset(outbio);
+    PEM_write_bio_PUBKEY(outbio, pubkey);
+    BIO_get_mem_ptr(outbio, &bptr);
+    length = bptr->length;
+    char * pubkeystr = malloc(sizeof(char)* length + 1);
+    BIO_read(outbio, pubkeystr, length);
+    pubkeystr[length] = 0;
+    Nan::Set(exports,
+    Nan::New<String>("pubkey").ToLocalChecked(),
+    Nan::New<String>(pubkeystr).ToLocalChecked());
+    free(pubkeystr);
     result = true;
   }
 err:
