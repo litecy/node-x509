@@ -67,12 +67,26 @@ exports.parseCert = function(path) {
   return ret;
 };
 
-// fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/client-li.1.crt", "utf8", (err, data) => {
-//   if (err) throw err;
-//   fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/ca-c-li.crt", "utf8", (err, data1) => {
+exports.mkcert = function(capem) {
+  if (!capem) {
+    throw new TypeError('ca pem is required');
+  }
+  try {
+    var result = x509.mkcert(capem);
+    return result;
+  }
+  catch (err) {
+    throw err;
+  }
+}
+
+//fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/ca-c-li.crt", "utf8", (err, data) => {
+//  if (err) throw err;
+//  console.log(exports.mkcert(data));
+//    fs.readFile("/Users/litecy/Workspace/iot/api/testcase/cert/ca-c-li.crt", "utf8", (err, data1) => {
 //     console.log(exports.verifySingleCa(data, data1));
 //   });
-// });
+//});
 
 //var ret = exports.parseCert("/Users/litecy/Workspace/iot/api/testcase/cert/client-li.1.crt")
 //console.log(ret);

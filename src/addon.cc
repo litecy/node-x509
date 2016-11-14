@@ -20,6 +20,10 @@ void init(Local<Object> exports) {
     Nan::New<FunctionTemplate>(verifySingleCa)->GetFunction());
 
   Nan::Set(exports,
+    Nan::New<String>("mkcert").ToLocalChecked(),
+    Nan::New<FunctionTemplate>(mkcert)->GetFunction());
+
+  Nan::Set(exports,
     Nan::New<String>("getAltNames").ToLocalChecked(),
     Nan::New<FunctionTemplate>(get_altnames)->GetFunction());
   Nan::Set(exports,

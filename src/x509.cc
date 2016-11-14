@@ -45,7 +45,28 @@ std::string parse_args(const Nan::FunctionCallbackInfo<v8::Value>& info) {
   return *String::Utf8Value(info[0]->ToString());
 }
 
-int load_x509(const char * pem, X509 ** ppx509) {
+int add_ext(X509 *cert, int nid, char *value)
+{
+    X509_EXTENSION *ex;
+    X509V3_CTX ctx;
+    /* This sets the 'context' of the extensions. */
+    /* No configuration database */
+    X509V3_set_ctx_nodb(&ctx);
+    /* Issuer and subject certs: both the target since it is self signed,
+     * no request and no CRL
+     */
+    X509V3_set_ctx(&ctx, cert, cert, NULL, NULL, 0);
+    ex = X509V3_EXT_conf_nid(NULL, &ctx, nid, value);
+    if (!ex)
+        return 0;
+    
+    X509_add_ext(cert,ex,-1);
+    X509_EXTENSION_free(ex);
+    return 1;
+}
+
+
+int load_cert(const char * pem, X509 ** ppx509) {
     int result = 0;
     BIO * bio_mem = BIO_new(BIO_s_mem());
     if(bio_mem == NULL) {
@@ -68,6 +89,95 @@ end:
     return result;
 }
 
+int load_key(const char * pem, EVP_PKEY ** ppkey) {
+    int result = 0;
+    BIO * bio_mem = BIO_new(BIO_s_mem());
+    if(bio_mem == NULL) {
+        result = -1;
+        Nan::ThrowError("mem alloc failed");
+        goto end;
+    }
+    if(BIO_puts(bio_mem, pem) <= 0) {
+        result = -2;
+        Nan::ThrowError("invalid pem");
+        goto end;
+    }
+    
+    PEM_read_bio_PrivateKey(bio_mem, ppkey, NULL, NULL);
+    result = 1;
+end:
+    if(bio_mem != NULL) {
+        BIO_free(bio_mem);
+    }
+    return result;
+}
+
+int mkcert(X509 **x509p, EVP_PKEY **pkeyp, int bits, int serial, int days, X509 *ca_cert, EVP_PKEY * ca_key)
+{
+    X509 *x;
+    EVP_PKEY *pk;
+    RSA *rsa;
+    X509_NAME *name=NULL;
+    
+    if ((pkeyp == NULL) || (*pkeyp == NULL))
+    {
+        if ((pk=EVP_PKEY_new()) == NULL)
+        {
+            return(0);
+        }
+    }
+    else
+        pk= *pkeyp;
+    
+    if ((x509p == NULL) || (*x509p == NULL))
+    {
+        if ((x=X509_new()) == NULL)
+            goto err;
+    }
+    else
+        x= *x509p;
+    rsa=RSA_generate_key(bits,RSA_F4,NULL,NULL);
+    if (!EVP_PKEY_assign_RSA(pk,rsa))
+    {
+        goto err;
+    }
+    rsa=NULL;
+    
+    X509_set_version(x,2);
+    ASN1_INTEGER_set(X509_get_serialNumber(x),serial);
+    X509_gmtime_adj(X509_get_notBefore(x),0);
+    X509_gmtime_adj(X509_get_notAfter(x),(long)60*60*24*days);
+    X509_set_pubkey(x,pk);
+    
+    name=X509_get_subject_name(x);
+    
+    /* This function creates and adds the entry, working out the
+     * correct string type and performing checks on its length.
+     * Normally we'd check the return value for errors...
+     */
+    X509_NAME_add_entry_by_txt(name,"CN",
+                               MBSTRING_ASC, (const unsigned char *)"QCloud IOT Certificate", -1, -1, 0);
+    
+    /* Its self signed so set the issuer name to be the same as the
+     * subject.
+     */
+    X509_set_issuer_name(x,X509_get_subject_name(ca_cert));
+    
+    /* Add various extensions: standard extensions */
+    add_ext(x, NID_basic_constraints, "critical,CA:FALSE");
+    add_ext(x, NID_key_usage, "critical,digitalSignature");
+    
+    add_ext(x, NID_subject_key_identifier, "hash");
+    if (!X509_sign(x,ca_key,EVP_sha256()))
+        goto err;
+    *x509p=x;
+    *pkeyp=pk;
+    return(1);
+err:
+    return(0);
+}
+
+
 int verify_cert(const char* pem_c_str, const char * ca_c_str)
 {
     int result = 0;
@@ -77,13 +187,13 @@ int verify_cert(const char* pem_c_str, const char * ca_c_str)
     
     OpenSSL_add_all_algorithms();
     
-    result = load_x509(pem_c_str, &cert);
+    result = load_cert(pem_c_str, &cert);
     if(result != 1) {
         Nan::ThrowError("load cert failed");
         goto end;
     }
     
-    result = load_x509(ca_c_str, &ca);
+    result = load_cert(ca_c_str, &ca);
     
     if(result != 1) {
         Nan::ThrowError("load cert failed");
@@ -109,6 +219,61 @@ end:
         X509_free(ca);
     }
     return result;
+}
+
+NAN_METHOD(mkcert) {
+  Nan::HandleScope scope;
+  std::string ca_pem = *String::Utf8Value(info[0]->ToString());
+  Local<Object> exports = Nan::New<Object>();
+
+  bool result = false;
+  X509 *x509=NULL;
+  EVP_PKEY *pkey=NULL;
+  X509 *ca_cert = NULL;
+  EVP_PKEY *ca_key=NULL;
+  BIO * outbio = BIO_new(BIO_s_mem());
+  if(load_cert(ca_pem.c_str(), &ca_cert) && load_key(ca_pem.c_str(), &ca_key)) {
+    if(!mkcert(&x509,&pkey,2048,0,365, ca_cert, ca_key)) {
+      goto err;
+    }
+
+    PEM_write_bio_X509(outbio, x509);
+    BUF_MEM *bptr;
+    BIO_get_mem_ptr(outbio, &bptr);
+    int length = bptr->length;
+    char * x509str = (char *)malloc(sizeof(char)* length + 1);
+    BIO_read(outbio, x509str, length);
+    x509str[length] = 0;
+    Nan::Set(exports,
+    Nan::New<String>("cert").ToLocalChecked(),
+    Nan::New<String>(x509str).ToLocalChecked());
+    free(x509str);
+    BIO_reset(outbio);
+    PEM_write_bio_PrivateKey(outbio, pkey, NULL, NULL, 0, NULL, NULL);
+    BIO_get_mem_ptr(outbio, &bptr);
+    length = bptr->length;
+    char * prikey = (char *)malloc(sizeof(char)* length + 1);
+    BIO_read(outbio, prikey, length);
+    prikey[length] = 0;
+    Nan::Set(exports,
+    Nan::New<String>("key").ToLocalChecked(),
+    Nan::New<String>(prikey).ToLocalChecked());
+    free(prikey);
+    result = true;
+  }
+err:
+  if(x509 != NULL)
+    X509_free(x509);
+  if(pkey != NULL)
+    EVP_PKEY_free(pkey);
+  if(outbio != NULL)
+    BIO_free(outbio);
+
+  Nan::Set(exports,
+    Nan::New<String>("result").ToLocalChecked(),
+    Nan::New<Boolean>(result));
+
+  info.GetReturnValue().Set(exports);
 }
 
 

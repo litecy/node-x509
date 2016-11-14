@@ -25,10 +25,12 @@ NAN_METHOD(get_issuer);
 NAN_METHOD(parse_cert);
 NAN_METHOD(verify);
 NAN_METHOD(verifySingleCa);
+NAN_METHOD(mkcert);
 
 Local<Value> try_parse(const std::string& dataString);
 Local<Value> verify(const std::string& dataString);
 Local<Value> verifySingleCa(const std::string& dataString, const std::string& caString);
+Local<Value> mkcert(const std::string& dataString);
 Local<Value> parse_date(ASN1_TIME *date);
 Local<Value> parse_serial(ASN1_INTEGER *serial);
 Local<Value> parse_name(X509_NAME *subject);
