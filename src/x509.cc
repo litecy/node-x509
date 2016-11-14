@@ -268,7 +268,7 @@ NAN_METHOD(mkcert) {
     PEM_write_bio_PUBKEY(outbio, pubkey);
     BIO_get_mem_ptr(outbio, &bptr);
     length = bptr->length;
-    char * pubkeystr = malloc(sizeof(char)* length + 1);
+    char * pubkeystr = (char *)malloc(sizeof(char)* length + 1);
     BIO_read(outbio, pubkeystr, length);
     pubkeystr[length] = 0;
     Nan::Set(exports,
